@@ -35,58 +35,53 @@ Otherwise it falls back to Anthropic native cost + Pro/Max rate limits. Same scr
 
 ## Install
 
-### One-liner (no clone)
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JayYuuuuu/claude-statusline-deepseek/main/install.sh | bash
 ```
 
-With opt-in claude-hud cleanup:
+Send any message in Claude Code to refresh the statusline.
+
+### With opt-in claude-hud cleanup
+
+If you previously installed claude-hud, you can disable it and free its plugin cache (~37MB) in the same step:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JayYuuuuu/claude-statusline-deepseek/main/install.sh | bash -s -- --remove-claude-hud
 ```
 
-The piped installer downloads `statusline.sh` from GitHub raw on the fly. No local repo, no git required.
+Idempotent — safe to run when claude-hud isn't installed.
 
-### Cloned repo (preferred for updates)
+### Update
+
+Just re-run the same curl command. `install.sh` overwrites `~/.claude/statusline-deepseek.sh` and re-patches `settings.json`, backing up the old one each time.
+
+### Uninstall
 
 ```bash
-git clone https://github.com/JayYuuuuu/claude-statusline-deepseek.git
-cd claude-statusline-deepseek
-./install.sh
-# update later:
-git pull && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/JayYuuuuu/claude-statusline-deepseek/main/uninstall.sh | bash
 ```
 
-Either path: send any message in Claude Code to refresh the statusline.
+Restores the most recent `settings.json` backup, deletes `~/.claude/statusline-deepseek.sh`, and clears the per-session caches.
 
-### What install.sh does
+### What `install.sh` does
 
-1. Verifies `bash`, `jq`, `curl`, `awk`, `stat`, `git` are installed.
-2. Copies `statusline.sh` → `~/.claude/statusline-deepseek.sh` (executable).
+1. Verifies `bash`, `jq`, `curl`, `awk`, `stat` are installed.
+2. Downloads `statusline.sh` (or copies it from a cloned repo) to `~/.claude/statusline-deepseek.sh`.
 3. Backs up `~/.claude/settings.json` to `settings.json.bak-<timestamp>`.
 4. Patches `statusLine.command` to point at the new script.
 5. Runs a smoke test.
 
-### Flags
+### Cloned-repo install (for hacking)
 
-| Flag | Effect |
-|------|--------|
-| `--remove-claude-hud` | Also disable claude-hud (delete `enabledPlugins."claude-hud@claude-hud"` and `extraKnownMarketplaces.claude-hud`) and `rm -rf ~/.claude/plugins/cache/claude-hud` (~37MB). Idempotent — safe to run when claude-hud isn't installed. The settings.json backup made earlier in the install can restore it. |
-| `--help` | Print usage. |
+If you want to read or modify the source locally:
 
 ```bash
-./install.sh --remove-claude-hud
+git clone https://github.com/JayYuuuuu/claude-statusline-deepseek.git
+cd claude-statusline-deepseek
+./install.sh                       # uses local statusline.sh
+git pull && ./install.sh           # update later
+./uninstall.sh                     # remove
 ```
-
-## Uninstall
-
-```bash
-./uninstall.sh
-```
-
-Restores the most recent settings.json backup, removes the script, clears caches.
 
 ## Pricing per model
 
