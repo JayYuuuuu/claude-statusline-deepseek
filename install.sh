@@ -4,11 +4,17 @@
 # - Patches ~/.claude/settings.json so statusLine.command points to it
 # - Backs up the old settings.json before patching
 # Idempotent: safe to re-run.
+#
+# Two install modes:
+#   1. Cloned repo:  ./install.sh             (uses ./statusline.sh)
+#   2. Remote pipe:  curl ... | bash          (auto-downloads statusline.sh)
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC="$SCRIPT_DIR/statusline.sh"
+# When piped from curl, BASH_SOURCE may be empty; fall back to "" then probe.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+SRC_LOCAL="${SCRIPT_DIR:-.}/statusline.sh"
+REMOTE_RAW="https://raw.githubusercontent.com/JayYuuuuu/claude-statusline-deepseek/main/statusline.sh"
 DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 DEST="$DEST_DIR/statusline-deepseek.sh"
 SETTINGS="$DEST_DIR/settings.json"
@@ -39,7 +45,7 @@ heading(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 # ---- Dependency check ----
 heading "Checking dependencies"
 MISSING=0
-for c in bash jq curl awk stat git; do
+for c in bash jq curl awk stat; do
   if command -v "$c" >/dev/null 2>&1; then
     ok "$c"
   else
@@ -51,10 +57,23 @@ if [ "$MISSING" -ne 0 ]; then
   exit 1
 fi
 
-# ---- Copy script ----
+# ---- Resolve source (local repo or remote download) ----
 heading "Installing script"
 mkdir -p "$DEST_DIR"
-cp "$SRC" "$DEST"
+if [ -f "$SRC_LOCAL" ]; then
+  cp "$SRC_LOCAL" "$DEST"
+  ok "Copied from $SRC_LOCAL"
+else
+  TMP_SRC=$(mktemp)
+  trap 'rm -f "$TMP_SRC"' EXIT
+  if ! curl -fsSL --max-time 30 "$REMOTE_RAW" -o "$TMP_SRC"; then
+    err "Failed to download $REMOTE_RAW"
+    err "Either git clone the repo or check your network."
+    exit 1
+  fi
+  cp "$TMP_SRC" "$DEST"
+  ok "Downloaded from $REMOTE_RAW"
+fi
 chmod +x "$DEST"
 ok "Wrote $DEST"
 

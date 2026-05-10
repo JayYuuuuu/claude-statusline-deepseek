@@ -35,13 +35,31 @@ Otherwise it falls back to Anthropic native cost + Pro/Max rate limits. Same scr
 
 ## Install
 
+### One-liner (no clone)
+
 ```bash
-git clone <this-repo-url> claude-statusline-deepseek
-cd claude-statusline-deepseek
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/JayYuuuuu/claude-statusline-deepseek/main/install.sh | bash
 ```
 
-Send any message in Claude Code to refresh the statusline.
+With opt-in claude-hud cleanup:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JayYuuuuu/claude-statusline-deepseek/main/install.sh | bash -s -- --remove-claude-hud
+```
+
+The piped installer downloads `statusline.sh` from GitHub raw on the fly. No local repo, no git required.
+
+### Cloned repo (preferred for updates)
+
+```bash
+git clone https://github.com/JayYuuuuu/claude-statusline-deepseek.git
+cd claude-statusline-deepseek
+./install.sh
+# update later:
+git pull && ./install.sh
+```
+
+Either path: send any message in Claude Code to refresh the statusline.
 
 ### What install.sh does
 
