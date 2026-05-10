@@ -59,18 +59,35 @@ Send any message in Claude Code to refresh the statusline.
 
 Restores the most recent settings.json backup, removes the script, clears caches.
 
-## Pricing override
+## Pricing per model
 
-Default pricing matches DeepSeek V3.2-Exp. For other models, create `~/.claude/statusline-deepseek.env`:
+The script ships with V4 pricing for both currently-active DeepSeek models, picked automatically based on which model cc-switch routes to.
+
+| Model | Cache miss in | Cache hit in | Output |
+|-------|--------------|-------------|--------|
+| `deepseek-v4-flash` (default; aliases: `deepseek-chat`, `deepseek-reasoner`) | $0.14/M | $0.0028/M | $0.28/M |
+| `deepseek-v4-pro` (75%-off promo until 2026-05-31) | $0.435/M | $0.003625/M | $0.87/M |
+
+The cost block in DeepSeek mode shows which pricing is in effect: `≈$0.46 v4-pro`.
+
+### Detection logic
+
+When `ANTHROPIC_BASE_URL` points to DeepSeek, the script reads `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` (the env vars cc-switch sets) and matches against the current `model.id` from stdin. If no mapping is set, falls back to `v4-flash` pricing.
+
+### Manual override
+
+Create `~/.claude/statusline-deepseek.env` to force specific prices:
 
 ```bash
-# DeepSeek-R1 example (USD per 1M tokens)
-DS_PRICE_INPUT_MISS=0.55
-DS_PRICE_INPUT_HIT=0.14
-DS_PRICE_OUTPUT=2.19
+DS_PRICE_INPUT_MISS=0.435
+DS_PRICE_INPUT_HIT=0.003625
+DS_PRICE_OUTPUT=0.87
+DS_MODEL_LABEL=v4-pro-custom
 ```
 
-Source: <https://api-docs.deepseek.com/quick_start/pricing>
+Sourced after auto-detection — your values always win.
+
+Source for current prices: <https://api-docs.deepseek.com/quick_start/pricing>
 
 ## How DeepSeek balance and spend are computed
 

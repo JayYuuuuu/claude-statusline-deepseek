@@ -90,11 +90,14 @@ Next steps:
   2. Verify DeepSeek mode by running cc-switch to a DeepSeek provider
      and starting a new session. The 💳 line will show real balance.
 
-  3. Override DeepSeek pricing for non-default models:
-     ~/.claude/statusline-deepseek.env (sourced by the script)
-       DS_PRICE_INPUT_MISS=0.55
-       DS_PRICE_INPUT_HIT=0.14
-       DS_PRICE_OUTPUT=2.19
+  3. Pricing is auto-selected based on the DeepSeek model cc-switch
+     routes to (v4-flash by default, v4-pro when ANTHROPIC_DEFAULT_OPUS_MODEL
+     or similar resolves to it). Force-override at:
+       ~/.claude/statusline-deepseek.env
+         DS_PRICE_INPUT_MISS=0.435
+         DS_PRICE_INPUT_HIT=0.003625
+         DS_PRICE_OUTPUT=0.87
+         DS_MODEL_LABEL=v4-pro
 
   4. Uninstall: ./uninstall.sh
 TIPS

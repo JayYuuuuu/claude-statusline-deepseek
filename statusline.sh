@@ -11,14 +11,17 @@ INPUT=$(cat)
 
 jq_s() { printf '%s' "$INPUT" | jq -r "$1 // empty" 2>/dev/null; }
 jq_n() { printf '%s' "$INPUT" | jq -r "$1 // 0"     2>/dev/null; }
+# Round half-up to int. Empty/non-numeric becomes 0.
+round_int() { awk -v v="${1:-0}" 'BEGIN { v=v+0; if (v<0) printf "%d", v-0.5; else printf "%d", v+0.5 }'; }
 
 # ---------- stdin fields ----------
 SESSION_ID=$(jq_s '.session_id')
-MODEL_NAME=$(jq_s '.model.display_name'); [ -z "$MODEL_NAME" ] && MODEL_NAME=$(jq_s '.model.id')
+MODEL_ID=$(jq_s '.model.id')
+MODEL_NAME=$(jq_s '.model.display_name'); [ -z "$MODEL_NAME" ] && MODEL_NAME="$MODEL_ID"
 [ -z "$MODEL_NAME" ] && MODEL_NAME="?"
 CWD=$(jq_s '.workspace.current_dir'); [ -z "$CWD" ] && CWD=$(jq_s '.cwd'); [ -z "$CWD" ] && CWD="$PWD"
 TRANSCRIPT=$(jq_s '.transcript_path')
-PCT_RAW=$(jq_n '.context_window.used_percentage'); PCT=${PCT_RAW%.*}; PCT=${PCT:-0}
+PCT=$(round_int "$(jq_n '.context_window.used_percentage')")
 CTX_SIZE=$(jq_n '.context_window.context_window_size')
 CTX_IN=$(jq_n '.context_window.total_input_tokens')
 CTX_OUT=$(jq_n '.context_window.total_output_tokens')
@@ -38,10 +41,48 @@ BASE_URL="${ANTHROPIC_BASE_URL:-}"
 IS_DEEPSEEK=0
 [[ "$BASE_URL" == *deepseek.com* ]] && IS_DEEPSEEK=1
 
-# DeepSeek pricing (USD per 1M tokens). Override via ~/.claude/statusline-deepseek.env
-DS_PRICE_INPUT_MISS=0.28
-DS_PRICE_INPUT_HIT=0.028
-DS_PRICE_OUTPUT=0.42
+# ---------- DeepSeek pricing (USD per 1M tokens) ----------
+# Source: https://api-docs.deepseek.com/quick_start/pricing
+# v4-pro is in a 75%-off promo until 2026-05-31; full list price afterward.
+ds_price_for() {
+  # Args: model name. Sets DS_PRICE_INPUT_MISS / _HIT / _OUTPUT and DS_MODEL_LABEL.
+  local m=$1
+  case "$m" in
+    deepseek-v4-pro)
+      DS_PRICE_INPUT_MISS=0.435; DS_PRICE_INPUT_HIT=0.003625; DS_PRICE_OUTPUT=0.87
+      DS_MODEL_LABEL="v4-pro" ;;
+    deepseek-v4-flash|deepseek-chat|deepseek-reasoner|"")
+      DS_PRICE_INPUT_MISS=0.14;  DS_PRICE_INPUT_HIT=0.0028;   DS_PRICE_OUTPUT=0.28
+      DS_MODEL_LABEL="v4-flash" ;;
+    *)
+      # Unknown model — use v4-flash as conservative default and label as ?
+      DS_PRICE_INPUT_MISS=0.14;  DS_PRICE_INPUT_HIT=0.0028;   DS_PRICE_OUTPUT=0.28
+      DS_MODEL_LABEL="${m}?" ;;
+  esac
+}
+
+# Default to v4-flash; auto-detection happens later (after MODEL_ID is parsed).
+ds_price_for ""
+
+# Map a Claude model id (e.g. claude-opus-4-7) to the DeepSeek model that
+# cc-switch routes to via ANTHROPIC_DEFAULT_*_MODEL env vars.
+ds_resolve_model() {
+  local mid=$1
+  case "$mid" in
+    *opus*)   printf '%s' "${ANTHROPIC_DEFAULT_OPUS_MODEL:-}" ;;
+    *sonnet*) printf '%s' "${ANTHROPIC_DEFAULT_SONNET_MODEL:-}" ;;
+    *haiku*)  printf '%s' "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" ;;
+    deepseek-*) printf '%s' "$mid" ;;
+    *) ;;
+  esac
+}
+
+if [ "$IS_DEEPSEEK" = "1" ]; then
+  RESOLVED=$(ds_resolve_model "$MODEL_ID")
+  [ -n "$RESOLVED" ] && ds_price_for "$RESOLVED"
+fi
+
+# User env file always wins.
 [ -f "$HOME/.claude/statusline-deepseek.env" ] && . "$HOME/.claude/statusline-deepseek.env"
 
 CDIR="${TMPDIR:-/tmp}"
@@ -281,7 +322,7 @@ fi
 build_rl_segment() {
   local label=$1 raw=$2 reset=$3 p bar rt
   [ -z "$raw" ] && return
-  p=${raw%.*}; [ -z "$p" ] && p=0
+  p=$(round_int "$raw")
   bar=$(build_bar "$p")
   rt=$(fmt_until "$reset")
   local seg="${DIM}${label}${RST} ${bar} ${p}%"
@@ -301,7 +342,7 @@ if [ "$IS_DEEPSEEK" = "1" ]; then
               cost = (in_t * p_in + cc_t * p_in + cr_t * p_hit + out_t * p_out) / 1000000
               printf "%.4f", cost
             }')
-  L2="${L2}  ${MAG}≈\$${EST}${RST}"
+  L2="${L2}  ${MAG}≈\$${EST}${RST} ${DIM}${DS_MODEL_LABEL}${RST}"
 
   BAL_RESP=$(fetch_balance)
   if [ -n "$BAL_RESP" ]; then
