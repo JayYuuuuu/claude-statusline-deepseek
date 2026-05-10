@@ -51,6 +51,17 @@ Send any message in Claude Code to refresh the statusline.
 4. Patches `statusLine.command` to point at the new script.
 5. Runs a smoke test.
 
+### Flags
+
+| Flag | Effect |
+|------|--------|
+| `--remove-claude-hud` | Also disable claude-hud (delete `enabledPlugins."claude-hud@claude-hud"` and `extraKnownMarketplaces.claude-hud`) and `rm -rf ~/.claude/plugins/cache/claude-hud` (~37MB). Idempotent — safe to run when claude-hud isn't installed. The settings.json backup made earlier in the install can restore it. |
+| `--help` | Print usage. |
+
+```bash
+./install.sh --remove-claude-hud
+```
+
 ## Uninstall
 
 ```bash

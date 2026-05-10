@@ -13,6 +13,24 @@ DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 DEST="$DEST_DIR/statusline-deepseek.sh"
 SETTINGS="$DEST_DIR/settings.json"
 
+REMOVE_HUD=0
+for arg in "$@"; do
+  case "$arg" in
+    --remove-claude-hud) REMOVE_HUD=1 ;;
+    -h|--help)
+      cat <<EOF
+Usage: ./install.sh [options]
+
+Options:
+  --remove-claude-hud   Also disable claude-hud and free its plugin cache
+                        (~37MB). Settings.json is backed up first.
+  -h, --help            Show this message.
+EOF
+      exit 0 ;;
+    *) printf 'Unknown flag: %s (use --help)\n' "$arg" >&2; exit 2 ;;
+  esac
+done
+
 ok()    { printf '\033[32m✓\033[0m %s\n' "$*"; }
 warn()  { printf '\033[33m!\033[0m %s\n' "$*"; }
 err()   { printf '\033[31m✗\033[0m %s\n' "$*" >&2; }
@@ -69,6 +87,35 @@ JSON
 fi
 ok "statusLine -> ~/.claude/statusline-deepseek.sh"
 
+# ---- Optional: purge claude-hud ----
+if [ "$REMOVE_HUD" = "1" ]; then
+  heading "Purging claude-hud (--remove-claude-hud)"
+  HAD_ENTRIES=$(jq -r '
+    [(.enabledPlugins // {} | has("claude-hud@claude-hud") or has("claude-hud")),
+     (.extraKnownMarketplaces // {} | has("claude-hud"))]
+    | any
+  ' "$SETTINGS" 2>/dev/null || echo false)
+  TMP=$(mktemp)
+  jq 'del(.enabledPlugins."claude-hud@claude-hud")
+      | del(.enabledPlugins."claude-hud")
+      | del(.extraKnownMarketplaces."claude-hud")' \
+     "$SETTINGS" > "$TMP"
+  mv "$TMP" "$SETTINGS"
+  if [ "$HAD_ENTRIES" = "true" ]; then
+    ok "Removed claude-hud entries from settings.json"
+  else
+    ok "No claude-hud entries in settings.json (already clean)"
+  fi
+  HUD_CACHE="$DEST_DIR/plugins/cache/claude-hud"
+  if [ -d "$HUD_CACHE" ]; then
+    SIZE=$(du -sh "$HUD_CACHE" 2>/dev/null | cut -f1)
+    rm -rf "$HUD_CACHE"
+    ok "Freed plugin cache ($SIZE) at $HUD_CACHE"
+  else
+    ok "No plugin cache at $HUD_CACHE"
+  fi
+fi
+
 # ---- Smoke test ----
 heading "Smoke test"
 SAMPLE='{"session_id":"install-test","model":{"display_name":"test"},"workspace":{"current_dir":"/tmp"},"context_window":{"used_percentage":42,"context_window_size":200000},"cost":{"total_cost_usd":0,"total_duration_ms":0}}'
@@ -99,5 +146,10 @@ Next steps:
          DS_PRICE_OUTPUT=0.87
          DS_MODEL_LABEL=v4-pro
 
-  4. Uninstall: ./uninstall.sh
+  4. claude-hud cleanup (opt-in): ./install.sh --remove-claude-hud
+     Disables it in settings.json and removes ~/.claude/plugins/cache/claude-hud
+     (about 37MB). Idempotent. Re-add later via Claude Code's
+     /plugin marketplace add jarrodwatts/claude-hud.
+
+  5. Uninstall: ./uninstall.sh
 TIPS
