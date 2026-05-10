@@ -31,6 +31,8 @@ RL5_PCT=$(jq_s '.rate_limits.five_hour.used_percentage')
 RL5_RESET=$(jq_s '.rate_limits.five_hour.resets_at')
 RL7_PCT=$(jq_s '.rate_limits.seven_day.used_percentage')
 RL7_RESET=$(jq_s '.rate_limits.seven_day.resets_at')
+EFFORT=$(jq_s '.effort.level')
+THINKING=$(jq_s '.thinking.enabled')
 
 # ---------- ANSI ----------
 RST=$'\033[0m'; DIM=$'\033[2m'; BOLD=$'\033[1m'
@@ -315,7 +317,11 @@ MIN=$(( DUR_MS / 60000 ))
 SEC=$(( (DUR_MS % 60000) / 1000 ))
 
 # ===== Line 1: identity =====
-L1="${CYAN}[${MODEL_NAME}]${RST}  ${BOLD}📁 ${DIR_BASE}${RST}"
+L1="${CYAN}[${MODEL_NAME}]${RST}"
+# Effort + thinking indicator: "🧠 xhigh 💭" — only when fields exist
+if [ -n "$EFFORT" ]; then L1="${L1} ${DIM}🧠 ${EFFORT}${RST}"; fi
+if [ "$THINKING" = "true" ]; then L1="${L1} ${DIM}💭${RST}"; fi
+L1="${L1}  ${BOLD}📁 ${DIR_BASE}${RST}"
 [ -n "$GIT" ] && L1="${L1}  ${GIT}"
 
 # ===== Line 2: context + rate limits + cost + duration =====
