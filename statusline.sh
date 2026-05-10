@@ -36,6 +36,11 @@ RL7_RESET=$(jq_s '.rate_limits.seven_day.resets_at')
 RST=$'\033[0m'; DIM=$'\033[2m'; BOLD=$'\033[1m'
 CYAN=$'\033[36m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'
 RED=$'\033[31m'; MAG=$'\033[35m'; BLUE=$'\033[34m'
+# Dim background colors for the progress-bar "track" so partial-fill cells
+# don't leak terminal-black through the unfilled half-cell. 256-color codes:
+# 22=dark green, 58=olive, 52=maroon. Reset to default BG with \033[49m.
+BG_GREEN=$'\033[48;5;22m'; BG_YELLOW=$'\033[48;5;58m'; BG_RED=$'\033[48;5;52m'
+BG_RST=$'\033[49m'
 
 BASE_URL="${ANTHROPIC_BASE_URL:-}"
 IS_DEEPSEEK=0
@@ -228,11 +233,16 @@ build_bar() {
   bar=""
   [ "$full"  -gt 0 ] && printf -v F "%${full}s"  && bar="${F// /█}"
   [ "$part"  -gt 0 ] && bar="${bar}${sub[$part]}"
-  [ "$empty" -gt 0 ] && printf -v E "%${empty}s" && bar="${bar}${E// /░}"
-  if   [ "$p" -ge 90 ]; then c="$RED"
-  elif [ "$p" -ge 70 ]; then c="$YELLOW"
-  else                       c="$GREEN"; fi
-  printf '%s%s%s' "$c" "$bar" "$RST"
+  # Empty cells are spaces so the dim BG renders without any FG glyph.
+  [ "$empty" -gt 0 ] && printf -v E "%${empty}s" && bar="${bar}${E}"
+  local bg
+  if   [ "$p" -ge 90 ]; then c="$RED";    bg="$BG_RED"
+  elif [ "$p" -ge 70 ]; then c="$YELLOW"; bg="$BG_YELLOW"
+  else                       c="$GREEN";  bg="$BG_GREEN"
+  fi
+  # FG paints filled glyphs; BG fills the entire 10-cell track including
+  # the right-half of partial cells and the all-empty trailing cells.
+  printf '%s%s%s%s%s' "$bg" "$c" "$bar" "$BG_RST" "$RST"
 }
 
 # format token count: 12345 -> 12.3k, 1234567 -> 1.23M
@@ -326,7 +336,7 @@ build_rl_segment() {
   bar=$(build_bar "$p")
   rt=$(fmt_until "$reset")
   local seg="${DIM}${label}${RST} ${bar} ${p}%"
-  [ -n "$rt" ] && seg="${seg}${DIM}↻${rt}${RST}"
+  [ -n "$rt" ] && seg="${seg} ${DIM}↻${rt}${RST}"
   printf '%s' "$seg"
 }
 SEG5=$(build_rl_segment "5h" "$RL5_PCT" "$RL5_RESET")
