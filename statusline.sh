@@ -9,6 +9,16 @@ set -uo pipefail
 INPUT=$(cat)
 [ -z "$INPUT" ] && exit 0
 
+# ---------- Terminal width detection (for responsive layout) ----------
+# stdin is piped from Claude Code, but CC inherits the controlling TTY to the
+# statusline child, so we can still read real cols/rows via /dev/tty.
+TERM_COLS=$({ stty size </dev/tty | awk '{print $2}'; } 2>/dev/null)
+TERM_COLS=${TERM_COLS:-999}
+# Wide layout (3 lines, line 2 ≈ 96 chars) needs ~105+ cols of real estate.
+# Below that → switch to narrow layout (4 lines, max line ≈ 55 chars).
+LAYOUT=wide
+[ "$TERM_COLS" -lt 105 ] 2>/dev/null && LAYOUT=narrow
+
 jq_s() { printf '%s' "$INPUT" | jq -r "$1 // empty" 2>/dev/null; }
 jq_n() { printf '%s' "$INPUT" | jq -r "$1 // 0"     2>/dev/null; }
 # Round half-up to int. Empty/non-numeric becomes 0.
@@ -324,17 +334,16 @@ if [ "$THINKING" = "true" ]; then L1="${L1} ${DIM}💭${RST}"; fi
 L1="${L1}  ${BOLD}📁 ${DIR_BASE}${RST}"
 [ -n "$GIT" ] && L1="${L1}  ${GIT}"
 
-# ===== Line 2: context + rate limits + cost + duration =====
-L2="${BAR} ${PCT}%"
-
-# Context token count: (85k/200k)
+# ===== Build segments (line 2 in wide mode; spread across rows in narrow) =====
+# Context segment: bar + pct + token count
+CTX_SEG="${BAR} ${PCT}%"
 if [ "${CTX_SIZE:-0}" -gt 0 ] && [ "${CTX_IN:-0}" -gt 0 ]; then
   USED=$(fmt_tokens "$(( CTX_IN + CTX_OUT ))")
   TOTAL=$(fmt_tokens "$CTX_SIZE")
-  L2="${L2} ${DIM}(${USED}/${TOTAL})${RST}"
+  CTX_SEG="${CTX_SEG} ${DIM}(${USED}/${TOTAL})${RST}"
 fi
 
-# Rate limit bars inline (real Anthropic Pro/Max only)
+# Rate limit bars (real Anthropic Pro/Max only — empty on DeepSeek)
 build_rl_segment() {
   local label=$1 raw=$2 reset=$3 p bar rt
   [ -z "$raw" ] && return
@@ -347,10 +356,9 @@ build_rl_segment() {
 }
 SEG5=$(build_rl_segment "5h" "$RL5_PCT" "$RL5_RESET")
 SEG7=$(build_rl_segment "7d" "$RL7_PCT" "$RL7_RESET")
-[ -n "$SEG5" ] && L2="${L2}  ${SEG5}"
-[ -n "$SEG7" ] && L2="${L2}  ${SEG7}"
 
-# Cost block
+# Cost segment (DeepSeek shows estimate + balance; native shows $cost_usd)
+COST_SEG=""
 if [ "$IS_DEEPSEEK" = "1" ]; then
   EST=$(awk -v in_t="$IN_T" -v out_t="$OUT_T" -v cr_t="$CR_T" -v cc_t="$CC_T" \
             -v p_in="$DS_PRICE_INPUT_MISS" -v p_hit="$DS_PRICE_INPUT_HIT" -v p_out="$DS_PRICE_OUTPUT" \
@@ -358,7 +366,7 @@ if [ "$IS_DEEPSEEK" = "1" ]; then
               cost = (in_t * p_in + cc_t * p_in + cr_t * p_hit + out_t * p_out) / 1000000
               printf "%.4f", cost
             }')
-  L2="${L2}  ${MAG}≈\$${EST}${RST} ${DIM}${DS_MODEL_LABEL}${RST}"
+  COST_SEG="${MAG}≈\$${EST}${RST} ${DIM}${DS_MODEL_LABEL}${RST}"
 
   BAL_RESP=$(fetch_balance)
   if [ -n "$BAL_RESP" ]; then
@@ -371,18 +379,38 @@ if [ "$IS_DEEPSEEK" = "1" ]; then
         DELTA=$(awk -v a="$BASE" -v b="$BAL_TOTAL" \
                 'BEGIN { d=a-b; if (d<0) d=0; if (d>=0.01) printf "▼%.2f", d; else printf "▼%.4f", d }')
       fi
-      L2="${L2}  ${BLUE}💳 ${BAL_TOTAL} ${BAL_CCY}${RST}"
-      [ -n "${DELTA:-}" ] && L2="${L2} ${DIM}(${DELTA})${RST}"
+      COST_SEG="${COST_SEG}  ${BLUE}💳 ${BAL_TOTAL} ${BAL_CCY}${RST}"
+      [ -n "${DELTA:-}" ] && COST_SEG="${COST_SEG} ${DIM}(${DELTA})${RST}"
     fi
   else
-    L2="${L2}  ${DIM}💳 —${RST}"
+    COST_SEG="${COST_SEG}  ${DIM}💳 —${RST}"
   fi
 else
   COST_FMT=$(awk -v c="$COST_NATIVE" 'BEGIN { printf "%.2f", c }')
-  L2="${L2}  ${YELLOW}\$${COST_FMT}${RST}"
+  COST_SEG="${YELLOW}\$${COST_FMT}${RST}"
 fi
 
-L2="${L2}  ${DIM}⏱ ${MIN}m${SEC}s${RST}"
+DUR_SEG="${DIM}⏱ ${MIN}m${SEC}s${RST}"
+
+# ===== Assemble lines based on terminal width =====
+# Wide  (≥105 cols): L1=identity, L2=ctx+5h+7d+cost+duration, L3=activity   (3 rows)
+# Narrow (<105 cols): L1=identity, L2=ctx+cost+duration, L_RL=5h+7d, L3=activity  (4 rows)
+L2="$CTX_SEG"
+L_RL=""
+if [ "$LAYOUT" = "wide" ]; then
+  [ -n "$SEG5" ] && L2="${L2}  ${SEG5}"
+  [ -n "$SEG7" ] && L2="${L2}  ${SEG7}"
+  L2="${L2}  ${COST_SEG}  ${DUR_SEG}"
+else
+  L2="${L2}  ${COST_SEG}  ${DUR_SEG}"
+  if [ -n "$SEG5" ] && [ -n "$SEG7" ]; then
+    L_RL="${SEG5}  ${SEG7}"
+  elif [ -n "$SEG5" ]; then
+    L_RL="${SEG5}"
+  elif [ -n "$SEG7" ]; then
+    L_RL="${SEG7}"
+  fi
+fi
 
 # ===== Line 3: activity (todos + agents + last tool) — only if anything =====
 L3=""
@@ -411,5 +439,6 @@ elif [ -z "$L3" ] && [ -n "$LAST_TOOL" ]; then
 fi
 
 printf '%s\n%s\n' "$L1" "$L2"
-if [ -n "$L3" ]; then printf '%s\n' "$L3"; fi
+[ -n "$L_RL" ] && printf '%s\n' "$L_RL"
+[ -n "$L3" ]   && printf '%s\n' "$L3"
 exit 0
