@@ -58,6 +58,19 @@ Idempotent — safe to run when claude-hud isn't installed.
 
 Just re-run the same curl command. `install.sh` overwrites `~/.claude/statusline-deepseek.sh` and re-patches `settings.json`, backing up the old one each time.
 
+> ⚠️ **`--force` and stacked status lines.** If `settings.json` already has a
+> `statusLine.command` that isn't this script, the installer **refuses** rather than
+> overwrite it — because that command may be a wrapper that calls this script *and*
+> does something else with the same input (feeding an external display, a status
+> panel, a logger…). Replacing it silently kills whatever the outer layer did, with
+> no error anywhere. If you really do want to point `statusLine` straight at this
+> script, run `./install.sh --force`.
+>
+> To *keep* the wrapper, install with `--force` first (updates the script body only
+> is not a thing — the installer always touches `statusLine`), then put the wrapper
+> path back into `settings.json` by hand. The wrapper's contract is unchanged: it
+> reads stdin and passes it through to `~/.claude/statusline-deepseek.sh`.
+
 ### Uninstall
 
 ```bash
@@ -71,7 +84,9 @@ Restores the most recent `settings.json` backup, deletes `~/.claude/statusline-d
 1. Verifies `bash`, `jq`, `curl`, `awk`, `stat` are installed.
 2. Downloads `statusline.sh` (or copies it from a cloned repo) to `~/.claude/statusline-deepseek.sh`.
 3. Backs up `~/.claude/settings.json` to `settings.json.bak-<timestamp>`.
-4. Patches `statusLine.command` to point at the new script.
+4. Patches `statusLine.command` to point at the new script — unless it already points
+   somewhere else, in which case it **aborts** and leaves `settings.json` alone
+   (see the `--force` note above).
 5. Runs a smoke test.
 
 ### Cloned-repo install (for hacking)

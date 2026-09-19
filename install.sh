@@ -20,14 +20,19 @@ DEST="$DEST_DIR/statusline-deepseek.sh"
 SETTINGS="$DEST_DIR/settings.json"
 
 REMOVE_HUD=0
+FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --remove-claude-hud) REMOVE_HUD=1 ;;
+    --force) FORCE=1 ;;
     -h|--help)
       cat <<EOF
 Usage: ./install.sh [options]
 
 Options:
+  --force               Overwrite an existing statusLine.command that belongs to
+                        something else (e.g. a wrapper script that calls us).
+                        Without this, the installer refuses rather than clobber it.
   --remove-claude-hud   Also disable claude-hud and free its plugin cache
                         (~37MB). Settings.json is backed up first.
   -h, --help            Show this message.
@@ -89,6 +94,21 @@ if [ -f "$SETTINGS" ]; then
     exit 1
   fi
   TMP=$(mktemp)
+  # Refuse to clobber a statusLine that belongs to something else. This bit us on
+  # a machine whose statusLine pointed at a wrapper script that *calls* our
+  # script (to feed an external display) — replacing it silently killed the feed.
+  CUR_CMD=$(jq -r '.statusLine.command // empty' "$SETTINGS" 2>/dev/null || true)
+  if [ -n "$CUR_CMD" ] \
+     && [ "$CUR_CMD" != "~/.claude/statusline-deepseek.sh" ] \
+     && [ "$CUR_CMD" != "$DEST" ] \
+     && [ "$FORCE" != "1" ]; then
+    err "settings.json 的 statusLine 已经指向别的东西，没有覆盖："
+    err "    $CUR_CMD"
+    err "它可能是个包装脚本（比如在调用本脚本之外还喂给别的设备/面板）。"
+    err "确认要换成直连本脚本，就加 --force 重跑："
+    err "    ./install.sh --force"
+    exit 1
+  fi
   jq --arg cmd "~/.claude/statusline-deepseek.sh" \
      '.statusLine = {"type":"command","command":$cmd}' \
      "$SETTINGS" > "$TMP"
