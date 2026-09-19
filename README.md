@@ -4,6 +4,9 @@ DeepSeek-aware statusline for Claude Code. Drop-in replacement for `claude-hud` 
 
 Shows live DeepSeek balance and session spend on the bottom statusbar — claude-hud only knows Anthropic prices, so its cost numbers are wrong on cc-switch + DeepSeek.
 
+Spend is displayed in **CNY (元)** by default and accounts for DeepSeek's peak/idle
+pricing (peak = 2× idle). Set `DS_CURRENCY=USD` for the English-page USD prices.
+
 ## What it shows
 
 ```
@@ -18,7 +21,7 @@ Shows live DeepSeek balance and session spend on the bottom statusbar — claude
 | `bar % (used/total)` | stdin `context_window` | always |
 | `5h … 7d …` | stdin `rate_limits` | real Anthropic Pro/Max only |
 | `$0.12` | stdin `cost.total_cost_usd` | real Anthropic |
-| `≈$0.46  💳 1.85 USD (▼0.05)` | DeepSeek `/user/balance` + transcript token sums | cc-switch DeepSeek mode |
+| `≈¥3.26  💳 10.51 CNY (▼0.05)` | DeepSeek `/user/balance` + transcript token sums | cc-switch DeepSeek mode |
 | `⏱ 1m25s` | stdin `cost.total_duration_ms` | always |
 | `✓done/total ⏳active` | transcript replay (TaskCreate/Update or TodoWrite) | when tasks exist |
 | `🤖 N agents: …` | transcript pending Agent tool_uses | when subagents in flight |
@@ -85,14 +88,31 @@ git pull && ./install.sh           # update later
 
 ## Pricing per model
 
-The script ships with V4 pricing for both currently-active DeepSeek models, picked automatically based on which model cc-switch routes to.
+Spend is shown in **CNY (元)** by default, because that is DeepSeek's *native* price:
+the Chinese docs page lists only 元 — there is no official USD price and no published
+FX rate, so converting from a USD table would just be a guess.
 
-| Model | Cache miss in | Cache hit in | Output |
-|-------|--------------|-------------|--------|
-| `deepseek-v4-flash` (default; aliases: `deepseek-chat`, `deepseek-reasoner`) | $0.14/M | $0.0028/M | $0.28/M |
-| `deepseek-v4-pro` (75%-off promo until 2026-05-31) | $0.435/M | $0.003625/M | $0.87/M |
+Prices are per 1M tokens, and **peak hours cost 2× idle**:
 
-The cost block in DeepSeek mode shows which pricing is in effect: `≈$0.46 v4-pro`.
+| Model | 缓存未命中（空闲 / 高峰） | 缓存命中（空闲 / 高峰） | 输出（空闲 / 高峰） |
+|-------|--------------------------|------------------------|---------------------|
+| `deepseek-v4-flash` (default; aliases: `deepseek-chat`, `deepseek-reasoner`) | ¥1 / ¥2 | ¥0.02 / ¥0.04 | ¥4 / ¥8 |
+| `deepseek-v4-pro` | ¥4.5 / ¥9 | ¥0.15 / ¥0.30 | ¥13.5 / ¥27 |
+
+**Peak** = 北京时间 周一~周五 `09:00-12:00` 与 `14:00-18:00`. Everything else —
+including all weekend — is idle. Official policy also treats 法定节假日 as idle;
+the script does not check the holiday calendar, so a handful of days a year get
+priced at peak. That errs high, never low.
+
+The cost block shows which model *and which rate* is in effect: `≈¥0.46 v4-flash·谷`
+(`·谷` = 空闲, `·峰` = 高峰).
+
+### Display currency
+
+Set `DS_CURRENCY=USD` to use the English-page USD list prices instead (symbol flips
+to `$`, and peak/idle collapses to a single rate since the USD page does not tier).
+Note that the balance line (`💳 10.51 CNY`) always shows whatever currency the
+DeepSeek account itself reports — that comes straight from `/user/balance`.
 
 ### Detection logic
 
@@ -100,18 +120,20 @@ When `ANTHROPIC_BASE_URL` points to DeepSeek, the script reads `ANTHROPIC_DEFAUL
 
 ### Manual override
 
-Create `~/.claude/statusline-deepseek.env` to force specific prices:
+Create `~/.claude/statusline-deepseek.env` to force specific prices
+(values in the same unit as `DS_CURRENCY` — CNY by default):
 
 ```bash
-DS_PRICE_INPUT_MISS=0.435
-DS_PRICE_INPUT_HIT=0.003625
-DS_PRICE_OUTPUT=0.87
+DS_CURRENCY=CNY
+DS_PRICE_INPUT_MISS=4.5
+DS_PRICE_INPUT_HIT=0.15
+DS_PRICE_OUTPUT=13.5
 DS_MODEL_LABEL=v4-pro-custom
 ```
 
 Sourced after auto-detection — your values always win.
 
-Source for current prices: <https://api-docs.deepseek.com/quick_start/pricing>
+Source for current prices: <https://api-docs.deepseek.com/zh-cn/quick_start/pricing>
 
 ## How DeepSeek balance and spend are computed
 

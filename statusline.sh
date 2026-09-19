@@ -58,23 +58,60 @@ BASE_URL="${ANTHROPIC_BASE_URL:-}"
 IS_DEEPSEEK=0
 [[ "$BASE_URL" == *deepseek.com* ]] && IS_DEEPSEEK=1
 
-# ---------- DeepSeek pricing (USD per 1M tokens) ----------
-# Source: https://api-docs.deepseek.com/quick_start/pricing
-# v4-pro is in a 75%-off promo until 2026-05-31; full list price afterward.
+# ---------- DeepSeek pricing ----------
+# Default currency is CNY (元 / 1M tokens). That is the *native* published price:
+# the Chinese docs page lists only 元 — there is no official USD price and no
+# published FX rate, so converting a USD table would just be a guess.
+# Set DS_CURRENCY=USD for the English-page USD list prices.
+# Source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+DS_CURRENCY="${DS_CURRENCY:-CNY}"
+
+# Peak = 北京时间 周一~周五 09:00-12:00 与 14:00-18:00，价格是闲置时段的 2 倍。
+# 其余时间（含周末）为闲置时段。官方口径里法定节假日也算闲置，这里不单独判断
+# —— 结果是少数几天按高峰计价，只会偏高估、不会偏低。
+ds_is_peak() {
+  local w h
+  w=$(TZ=Asia/Shanghai date +%u 2>/dev/null)   # 1=Mon .. 7=Sun
+  [ "${w:-0}" -le 5 ] || return 1
+  h=$(TZ=Asia/Shanghai date +%H 2>/dev/null) || return 1
+  h=$((10#${h:-0}))
+  { [ "$h" -ge 9 ] && [ "$h" -lt 12 ]; } || { [ "$h" -ge 14 ] && [ "$h" -lt 18 ]; }
+}
+
 ds_price_for() {
   # Args: model name. Sets DS_PRICE_INPUT_MISS / _HIT / _OUTPUT and DS_MODEL_LABEL.
-  local m=$1
+  local m=$1 tag
+
+  if [ "$DS_CURRENCY" = "USD" ]; then
+    case "$m" in
+      deepseek-v4-pro)
+        DS_PRICE_INPUT_MISS=0.435; DS_PRICE_INPUT_HIT=0.003625; DS_PRICE_OUTPUT=0.87
+        DS_MODEL_LABEL="v4-pro" ;;
+      deepseek-v4-flash|deepseek-chat|deepseek-reasoner|"")
+        DS_PRICE_INPUT_MISS=0.14;  DS_PRICE_INPUT_HIT=0.0028;   DS_PRICE_OUTPUT=0.28
+        DS_MODEL_LABEL="v4-flash" ;;
+      *)
+        # Unknown model — use v4-flash as conservative default and label as ?
+        DS_PRICE_INPUT_MISS=0.14;  DS_PRICE_INPUT_HIT=0.0028;   DS_PRICE_OUTPUT=0.28
+        DS_MODEL_LABEL="${m}?" ;;
+    esac
+    return
+  fi
+
+  ds_is_peak && tag="峰" || tag="谷"
   case "$m" in
     deepseek-v4-pro)
-      DS_PRICE_INPUT_MISS=0.435; DS_PRICE_INPUT_HIT=0.003625; DS_PRICE_OUTPUT=0.87
-      DS_MODEL_LABEL="v4-pro" ;;
+      if [ "$tag" = "峰" ]; then DS_PRICE_INPUT_MISS=9.0; DS_PRICE_INPUT_HIT=0.30; DS_PRICE_OUTPUT=27.0
+      else                       DS_PRICE_INPUT_MISS=4.5; DS_PRICE_INPUT_HIT=0.15; DS_PRICE_OUTPUT=13.5; fi
+      DS_MODEL_LABEL="v4-pro·${tag}" ;;
     deepseek-v4-flash|deepseek-chat|deepseek-reasoner|"")
-      DS_PRICE_INPUT_MISS=0.14;  DS_PRICE_INPUT_HIT=0.0028;   DS_PRICE_OUTPUT=0.28
-      DS_MODEL_LABEL="v4-flash" ;;
+      if [ "$tag" = "峰" ]; then DS_PRICE_INPUT_MISS=2.0; DS_PRICE_INPUT_HIT=0.04; DS_PRICE_OUTPUT=8.0
+      else                       DS_PRICE_INPUT_MISS=1.0; DS_PRICE_INPUT_HIT=0.02; DS_PRICE_OUTPUT=4.0; fi
+      DS_MODEL_LABEL="v4-flash·${tag}" ;;
     *)
-      # Unknown model — use v4-flash as conservative default and label as ?
-      DS_PRICE_INPUT_MISS=0.14;  DS_PRICE_INPUT_HIT=0.0028;   DS_PRICE_OUTPUT=0.28
-      DS_MODEL_LABEL="${m}?" ;;
+      if [ "$tag" = "峰" ]; then DS_PRICE_INPUT_MISS=2.0; DS_PRICE_INPUT_HIT=0.04; DS_PRICE_OUTPUT=8.0
+      else                       DS_PRICE_INPUT_MISS=1.0; DS_PRICE_INPUT_HIT=0.02; DS_PRICE_OUTPUT=4.0; fi
+      DS_MODEL_LABEL="${m}?·${tag}" ;;
   esac
 }
 
@@ -366,7 +403,10 @@ if [ "$IS_DEEPSEEK" = "1" ]; then
               cost = (in_t * p_in + cc_t * p_in + cr_t * p_hit + out_t * p_out) / 1000000
               printf "%.4f", cost
             }')
-  COST_SEG="${MAG}≈\$${EST}${RST} ${DIM}${DS_MODEL_LABEL}${RST}"
+  # Currency symbol is read here, not at price time — the user env file is
+  # sourced in between and may flip DS_CURRENCY.
+  if [ "$DS_CURRENCY" = "USD" ]; then CUR_SYM='$'; else CUR_SYM='¥'; fi
+  COST_SEG="${MAG}≈${CUR_SYM}${EST}${RST} ${DIM}${DS_MODEL_LABEL}${RST}"
 
   BAL_RESP=$(fetch_balance)
   if [ -n "$BAL_RESP" ]; then
