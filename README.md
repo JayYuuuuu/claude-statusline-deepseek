@@ -86,7 +86,9 @@ Restores the most recent `settings.json` backup, deletes `~/.claude/statusline-d
 3. Backs up `~/.claude/settings.json` to `settings.json.bak-<timestamp>`.
 4. Patches `statusLine.command` to point at the new script — unless it already points
    somewhere else, in which case it **aborts** and leaves `settings.json` alone
-   (see the `--force` note above).
+   (see the `--force` note above). Note the abort happens *after* step 2, so
+   `~/.claude/statusline-deepseek.sh` still gets updated — which is exactly what you
+   want on a wrapped machine: new script body, outer wrapper untouched.
 5. Runs a smoke test.
 
 ### Cloned-repo install (for hacking)
